@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Loot Box Simulator</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="hdr">
+      <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="items">Items</button>
+        <button class="tab-btn" data-tab="bundles">My Bundles</button>
+        <button class="tab-btn" data-tab="roll">Roll Simulator</button>
+        <button class="tab-btn" data-tab="help">Help</button>
+      </nav>
+      <div class="hdr-actions">
+        <button id="import-btn" class="hdr-btn" title="Import from .xlsx">Import</button>
+        <input type="file" id="import-file" accept=".xlsx" style="display:none">
+        <button id="export-btn" class="hdr-btn" title="Export to Google Sheets (.xlsx)">Export</button>
+        <button id="theme-toggle" class="hdr-btn theme-toggle" title="Toggle light/dark mode">◑</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <!-- Items Tab -->
+      <section id="tab-items" class="tab active">
+        <div class="grid" id="items-grid"></div>
+      </section>
+
+      <!-- My Bundles Tab -->
+      <section id="tab-bundles" class="tab">
+        <div class="grid" id="bundles-grid"></div>
+      </section>
+
+      <!-- Roll Simulator Tab -->
+      <section id="tab-roll" class="tab">
+        <div class="roll-wrap">
+          <div class="roll-ctrl">
+            <select id="roll-sel">
+              <option value="">Select a bundle…</option>
+            </select>
+            <button id="roll-btn" class="roll-btn" disabled>Roll</button>
+          </div>
+          <div id="roll-anim" class="roll-anim hidden">
+            <span class="rolling-txt">Rolling…</span>
+          </div>
+          <div id="roll-result" class="roll-result hidden"></div>
+          <div class="history-section">
+            <h3 class="history-title">Roll History</h3>
+            <div id="history-list" class="history-list">
+              <p class="empty-msg">No rolls yet.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Help Tab -->
+      <section id="tab-help" class="tab">
+        <div class="help-wrap">
+
+          <div class="help-block">
+            <h2 class="help-h2">Getting Started</h2>
+            <p class="help-p">Build your item library first, then create bundles that reference those items. Use the Roll Simulator to test drop rates. Export to Google Sheets to share or analyse your data.</p>
+          </div>
+
+          <div class="help-block">
+            <h2 class="help-h2">Bundle Types</h2>
+            <div class="help-table-wrap">
+              <table class="help-table">
+                <thead><tr><th>Type</th><th>Behaviour</th><th>Probability</th></tr></thead>
+                <tbody>
+                  <tr><td><strong>Inclusive</strong></td><td>Exactly one item is guaranteed per roll (weighted random pick)</td><td>All entries must sum to 100%</td></tr>
+                  <tr><td><strong>Exclusive</strong></td><td>Each entry rolls independently, you can get 0 to all entries</td><td>Each entry has its own 0-100% chance</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="help-block">
+            <h2 class="help-h2">Auto Weights (Inverse Value)</h2>
+            <p class="help-p">When creating an Inclusive bundle, link items that have a <strong>Value</strong> set, then click <strong>Auto Weights</strong>. The formula used is:</p>
+            <div class="help-formula">
+              Probability[i] = (1 / Value[i]) / Σ(1 / Value[j]) × 100
+            </div>
+            <p class="help-p">Higher-value items get a lower drop rate. Lower-value items drop more often.</p>
+          </div>
+
+          <div class="help-block">
+            <h2 class="help-h2">Google Sheets Setup</h2>
+            <p class="help-p">Click <strong>Export</strong> in the top bar, then open <code>lootbox-data.xlsx</code> in Google Sheets. You will have three sheets:</p>
+            <div class="help-table-wrap">
+              <table class="help-table">
+                <thead><tr><th>Sheet</th><th>Key Columns</th></tr></thead>
+                <tbody>
+                  <tr><td><strong>Bundles</strong></td><td>A: Bundle Name, B: Bundle Type, D: Entry Name, E: Probability, F: Linked Item, G: Sub-bundle</td></tr>
+                  <tr><td><strong>Items</strong></td><td>A: Name, C: Value, D+: any parameters you added</td></tr>
+                  <tr><td><strong>Roll History</strong></td><td>Filled by Apps Script: Time, Bundle, Result</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="help-p">Create a new sheet called <strong>Rolls</strong> to run your formula simulations. All formulas below assume the exported sheet names are unchanged.</p>
+          </div>
+
+          <div class="help-block">
+            <h2 class="help-h2">Inclusive Bundle: Roll Formula</h2>
+            <p class="help-p">An inclusive bundle gives exactly one item per roll using weighted probabilities. In your <strong>Rolls</strong> sheet, put the bundle name in cell A1, then in B1 paste this:</p>
+            <div class="code-block">
+              <button class="copy-btn" data-target="formula-inc">Copy</button>
+<pre id="formula-inc">=LET(
+  bundle_name, A1,
+  names,  FILTER(Bundles!D:D, Bundles!A:A=bundle_name, Bundles!B:B="inclusive"),
+  probs,  VALUE(FILTER(Bundles!E:E, Bundles!A:A=bundle_name, Bundles!B:B="inclusive")),
+  cumsum, SCAN(0, probs, LAMBDA(acc, v, acc + v)),
+  INDEX(names, MATCH(TRUE, cumsum >= RAND() * SUM(probs), 0))
+)</pre>
+            </div>
+            <p class="help-p">How it works:</p>
+            <ol class="help-ol">
+              <li>Pulls all entries for that bundle from the Bundles sheet</li>
+              <li>Builds a cumulative sum of probabilities (e.g. 25, 50, 100)</li>
+              <li>Generates a random number between 0 and the total, then finds which bucket it falls into</li>
+              <li>Returns the matching entry name</li>
+            </ol>
+            <p class="help-p">Press <kbd>F9</kbd> to re-roll. Each recalculate triggers a new random number. Replace <code>A1</code> with your bundle name in quotes if you prefer a hardcoded reference.</p>
+          </div>
+
+          <div class="help-block">
+            <h2 class="help-h2">Exclusive Bundle: Roll Formula</h2>
+            <p class="help-p">An exclusive bundle rolls each entry independently. Set up your <strong>Rolls</strong> sheet like this:</p>
+            <div class="help-table-wrap">
+              <table class="help-table">
+                <thead><tr><th>Cell</th><th>Content</th></tr></thead>
+                <tbody>
+                  <tr><td>A1</td><td>Your bundle name (text)</td></tr>
+                  <tr><td>A3 downward</td><td>Entry names (manually or pulled via FILTER)</td></tr>
+                  <tr><td>B3 downward</td><td>Probabilities (manually or pulled via FILTER)</td></tr>
+                  <tr><td>C3 downward</td><td>Roll result formula (see below)</td></tr>
+                  <tr><td>E3</td><td>Collect drops formula (see below)</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="help-p">Step 1: Pull entries automatically into A3 and B3 (array-expands down):</p>
+            <div class="code-block">
+              <button class="copy-btn" data-target="formula-exc-pull">Copy</button>
+<pre id="formula-exc-pull">=FILTER(Bundles!D:D, Bundles!A:A=A1, Bundles!B:B="exclusive")   ← A3
+=VALUE(FILTER(Bundles!E:E, Bundles!A:A=A1, Bundles!B:B="exclusive"))   ← B3</pre>
+            </div>
+            <p class="help-p">Step 2: Roll each entry in C3, drag down to match the number of entries:</p>
+            <div class="code-block">
+              <button class="copy-btn" data-target="formula-exc">Copy</button>
+<pre id="formula-exc">=IF(RAND() * 100 &lt; B3, A3, "")</pre>
+            </div>
+            <p class="help-p">Step 3: Collect all items that dropped into E3:</p>
+            <div class="code-block">
+              <button class="copy-btn" data-target="formula-exc-collect">Copy</button>
+<pre id="formula-exc-collect">=IFERROR(TEXTJOIN(", ", TRUE, FILTER(C3:C20, C3:C20 &lt;&gt; "")), "(nothing dropped)")</pre>
+            </div>
+            <p class="help-p">Press <kbd>F9</kbd> to recalculate. Each entry in column C independently passes or fails its probability check. E3 shows only the items that dropped, joined with commas.</p>
+          </div>
+
+          <div class="help-block">
+            <h2 class="help-h2">Look Up Item Parameters After a Roll</h2>
+            <p class="help-p">Once you have an item name from a roll result, use XLOOKUP to pull its stats from the Items sheet. If B1 contains the rolled item name:</p>
+            <div class="code-block">
+              <button class="copy-btn" data-target="formula-xlookup">Copy</button>
+<pre id="formula-xlookup">=XLOOKUP(B1, Items!A:A, Items!C:C)          ← returns Value
+=XLOOKUP(B1, Items!A:A, Items!D:D)          ← returns first param column
+=XLOOKUP(B1, Items!A:A, Items!D:Z, "(not found)")  ← returns all params</pre>
+            </div>
+            <p class="help-p">If you are on an older Sheets version without XLOOKUP, use <code>=VLOOKUP(B1, Items!A:Z, 3, FALSE)</code> where 3 is the column index of the field you want.</p>
+          </div>
+
+          <div class="help-block">
+            <h2 class="help-h2">Google Apps Script: Full Roll Simulator</h2>
+            <p class="help-p">For a fully automated experience inside Google Sheets: go to <strong>Extensions &gt; Apps Script</strong>, paste the script below, save, then run <code>onOpen()</code> once to add the <strong>Loot Box</strong> menu.</p>
+            <div class="code-block">
+              <button class="copy-btn" data-target="apps-script">Copy</button>
+<pre id="apps-script">/**
+ * Loot Box Simulator - Google Apps Script
+ * =========================================
+ * 1. Export data from the Loot Box Simulator (click Export)
+ * 2. Open lootbox-data.xlsx in Google Sheets
+ * 3. Go to Extensions > Apps Script
+ * 4. Paste this script, click Save (Ctrl+S)
+ * 5. Run onOpen() once, then use the Loot Box menu
+ */
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Loot Box')
+    .addItem('Roll a Bundle', 'promptRoll')
+    .addItem('Roll All Bundles', 'rollAllBundles')
+    .addSeparator()
+    .addItem('Clear Roll History', 'clearHistory')
+    .addToUi();
+}
+
+// ---- Core Logic ----
+
+function pickWeighted(names, probs) {
+  var total = probs.reduce(function(a, b) { return a + b; }, 0);
+  if (total <= 0) return '(empty pool)';
+  var r = Math.random() * total;
+  for (var i = 0; i < names.length; i++) {
+    r -= probs[i];
+    if (r <= 0) return names[i];
+  }
+  return names[names.length - 1];
+}
+
+function rollBundle(bundleName, allRows, depth) {
+  depth = depth || 0;
+  if (depth > 8) return '(max depth reached)';
+
+  var rows = allRows.filter(function(r) {
+    return String(r['Bundle Name']).trim() === bundleName;
+  });
+  if (rows.length === 0) return '(bundle not found: ' + bundleName + ')';
+
+  var type = String(rows[0]['Bundle Type']).toLowerCase();
+
+  if (type === 'inclusive') {
+    var names = rows.map(function(r) { return String(r['Entry Name']); });
+    var probs = rows.map(function(r) { return Number(r['Probability']) || 0; });
+    return pickWeighted(names, probs);
+  }
+
+  // Exclusive: each entry rolls independently
+  var drops = [];
+  rows.forEach(function(r) {
+    if (Math.random() * 100 < (Number(r['Probability']) || 0)) {
+      var sub = String(r['Sub-bundle'] || '').trim();
+      if (sub) {
+        drops.push(sub + ' [' + rollBundle(sub, allRows, depth + 1) + ']');
+      } else {
+        drops.push(String(r['Entry Name']));
+      }
+    }
+  });
+  return drops.length > 0 ? drops.join(', ') : '(nothing dropped)';
+}
+
+// ---- Sheet Helpers ----
+
+function getBundleRows() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Bundles');
+  if (!sheet) throw new Error('Bundles sheet not found. Export your data first.');
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  return data.slice(1).map(function(row) {
+    var obj = {};
+    headers.forEach(function(h, i) { obj[h] = row[i]; });
+    return obj;
+  });
+}
+
+function getBundleNames(allRows) {
+  var seen = {};
+  return allRows
+    .map(function(r) { return String(r['Bundle Name']); })
+    .filter(function(n) {
+      if (!n || seen[n]) return false;
+      seen[n] = true;
+      return true;
+    });
+}
+
+function logResult(ss, bundleName, result) {
+  var histSheet = ss.getSheetByName('Roll History');
+  if (!histSheet) {
+    histSheet = ss.insertSheet('Roll History');
+    histSheet.appendRow(['Time', 'Bundle', 'Result']);
+    histSheet.getRange(1, 1, 1, 3).setFontWeight('bold');
+  }
+  histSheet.appendRow([new Date().toLocaleString(), bundleName, result]);
+}
+
+// ---- Menu Actions ----
+
+function promptRoll() {
+  var ui = SpreadsheetApp.getUi();
+  var allRows;
+  try { allRows = getBundleRows(); } catch(e) { ui.alert(e.message); return; }
+
+  var names = getBundleNames(allRows);
+  var response = ui.prompt(
+    'Roll a Bundle',
+    'Available bundles:\n  ' + names.join('\n  ') + '\n\nEnter bundle name:',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  var name = response.getResponseText().trim();
+  if (!name) return;
+
+  var result = rollBundle(name, allRows, 0);
+  logResult(SpreadsheetApp.getActiveSpreadsheet(), name, result);
+  ui.alert(name + ' rolled:\n\n' + result);
+}
+
+function rollAllBundles() {
+  var ui = SpreadsheetApp.getUi();
+  var allRows;
+  try { allRows = getBundleRows(); } catch(e) { ui.alert(e.message); return; }
+
+  var names = getBundleNames(allRows);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var results = names.map(function(name) {
+    var result = rollBundle(name, allRows, 0);
+    logResult(ss, name, result);
+    return name + ': ' + result;
+  });
+  ui.alert('Roll Results:\n\n' + results.join('\n'));
+}
+
+function clearHistory() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var histSheet = ss.getSheetByName('Roll History');
+  if (!histSheet) { SpreadsheetApp.getUi().alert('No Roll History sheet found.'); return; }
+  var last = histSheet.getLastRow();
+  if (last > 1) histSheet.deleteRows(2, last - 1);
+  SpreadsheetApp.getUi().alert('Roll History cleared.');
+}</pre>
+            </div>
+          </div>
+
+          <div class="help-block">
+            <h2 class="help-h2">Export / Import Format</h2>
+            <div class="help-table-wrap">
+              <table class="help-table">
+                <thead><tr><th>Sheet</th><th>Columns</th></tr></thead>
+                <tbody>
+                  <tr><td><strong>Items</strong></td><td>Name, Emoji, Value, [param columns…]</td></tr>
+                  <tr><td><strong>Bundles</strong></td><td>Bundle Name, Bundle Type, Bundle Emoji, Entry Name, Probability, Linked Item, Sub-bundle</td></tr>
+                  <tr><td><strong>Roll History</strong></td><td>Time, Bundle, Result</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="help-p">When importing, existing data is replaced. Item parameter columns are dynamic; any column beyond Value is treated as a parameter key.</p>
+          </div>
+
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span class="footer-credit">Created by <strong>Shravan</strong></span>
+      <a id="linkedin-link" href="#" target="_blank" rel="noopener" class="linkedin-btn">LinkedIn</a>
+    </footer>
+  </div>
+
+  <!-- Modal: Create / Edit Bundle -->
+  <div id="modal-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-hdr">
+        <h2 id="modal-title">Create Bundle</h2>
+        <button id="modal-close" class="close-btn">×</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Name + Emoji -->
+        <div class="field">
+          <label class="lbl">Bundle Name</label>
+          <div class="name-emoji-row">
+            <button id="bundle-emoji-btn" class="emoji-preview-btn" type="button" title="Choose icon">📦</button>
+            <input type="text" id="inp-name" class="inp" placeholder="e.g. Ultra Pack">
+          </div>
+          <div id="bundle-emoji-picker" class="emoji-picker hidden"></div>
+        </div>
+
+        <!-- Type -->
+        <div class="field">
+          <label class="lbl">Bundle Type</label>
+          <div class="type-sel">
+            <button class="type-btn active" data-type="inclusive">
+              <strong>Inclusive</strong>
+              <small>Roll once, guaranteed 1 item (weighted pick, sum must equal 100%)</small>
+            </button>
+            <button class="type-btn" data-type="exclusive">
+              <strong>Exclusive</strong>
+              <small>Each entry rolls independently, get 0 to all items</small>
+            </button>
+          </div>
+        </div>
+
+        <!-- Inclusive Section -->
+        <div id="sect-inclusive">
+          <div class="sect-hdr">
+            <span class="sect-title">Items</span>
+            <div class="sect-hdr-right">
+              <button id="auto-prob-btn" class="btn-auto" title="Auto-assign probabilities using inverse value weighting">Auto Weights</button>
+              <span class="prob-total" id="inc-total">Total: 0%</span>
+            </div>
+          </div>
+          <div id="inc-list" class="item-list"></div>
+          <button id="add-inc-item" class="add-row-btn">+ Add Item</button>
+        </div>
+
+        <!-- Exclusive Section -->
+        <div id="sect-exclusive" class="hidden">
+          <div class="sect-hdr">
+            <span class="sect-title">Entries</span>
+            <small class="sect-note">Each entry has its own independent probability</small>
+          </div>
+          <div id="exc-list" class="item-list"></div>
+          <button id="add-exc-entry" class="add-row-btn">+ Add Entry</button>
+        </div>
+      </div>
+
+      <div class="modal-ftr">
+        <button id="cancel-btn" class="btn-sec">Cancel</button>
+        <button id="save-btn" class="btn-pri">Save Bundle</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Create / Edit Item -->
+  <div id="item-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-hdr">
+        <h2 id="item-modal-title">Create Item</h2>
+        <button id="item-modal-close" class="close-btn">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label class="lbl">Item Name</label>
+          <div class="name-emoji-row">
+            <button id="item-emoji-btn" class="emoji-preview-btn" type="button" title="Choose icon">✨</button>
+            <input type="text" id="item-inp-name" class="inp" placeholder="e.g. Sword">
+          </div>
+          <div id="item-emoji-picker" class="emoji-picker hidden"></div>
+        </div>
+        <div class="field">
+          <label class="lbl">Value</label>
+          <input type="number" id="item-inp-value" class="inp" placeholder="e.g. 100" min="0" step="1">
+          <small class="field-hint">Used to auto-assign drop probabilities in bundles. Higher value = lower drop rate.</small>
+        </div>
+        <div class="field">
+          <div class="sect-hdr">
+            <span class="sect-title">Parameters</span>
+            <small class="sect-note">Any key / value pairs you want</small>
+          </div>
+          <div id="params-list" class="item-list"></div>
+          <button id="add-param" class="add-row-btn">+ Add Parameter</button>
+        </div>
+      </div>
+      <div class="modal-ftr">
+        <button id="item-cancel-btn" class="btn-sec">Cancel</button>
+        <button id="item-save-btn" class="btn-pri">Save Item</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
