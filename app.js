@@ -22,6 +22,61 @@ const ITEM_EMOJIS = [
 // ============================================================
 // STATE & PERSISTENCE
 // ============================================================
+// SEED DATA - shown on first visit (when localStorage is empty)
+// ============================================================
+const SEED_ITEMS = [
+  { id: 'seed_i1', name: 'Iron Sword',      emoji: '⚔️',  value: 10,  params: [{ k: 'damage', v: '15' }, { k: 'rarity', v: 'common' }] },
+  { id: 'seed_i2', name: 'Health Potion',   emoji: '🧪',  value: 5,   params: [{ k: 'heal', v: '50' },   { k: 'rarity', v: 'common' }] },
+  { id: 'seed_i3', name: 'Magic Staff',     emoji: '🪄',  value: 50,  params: [{ k: 'damage', v: '40' }, { k: 'rarity', v: 'rare' }] },
+  { id: 'seed_i4', name: 'Golden Shield',   emoji: '🛡️',  value: 80,  params: [{ k: 'armor', v: '60' },  { k: 'rarity', v: 'epic' }] },
+  { id: 'seed_i5', name: 'Shadow Dagger',   emoji: '🗡️',  value: 40,  params: [{ k: 'damage', v: '25' }, { k: 'rarity', v: 'rare' }] },
+  { id: 'seed_i6', name: 'Dragon Scale',    emoji: '🐉',  value: 200, params: [{ k: 'armor', v: '100' }, { k: 'rarity', v: 'legendary' }] },
+  { id: 'seed_i7', name: 'Speed Boots',     emoji: '👟',  value: 30,  params: [{ k: 'speed', v: '+20%' }, { k: 'rarity', v: 'uncommon' }] },
+  { id: 'seed_i8', name: 'Mana Crystal',    emoji: '💎',  value: 60,  params: [{ k: 'mana', v: '80' },   { k: 'rarity', v: 'rare' }] },
+  { id: 'seed_i9', name: 'Wooden Arrow',    emoji: '🏹',  value: 3,   params: [{ k: 'damage', v: '5' },  { k: 'rarity', v: 'common' }] },
+  { id: 'seed_i10', name: 'Phoenix Feather',emoji: '🪶',  value: 150, params: [{ k: 'effect', v: 'revive' }, { k: 'rarity', v: 'legendary' }] },
+];
+
+const SEED_BUNDLES = [
+  {
+    id: 'seed_b1', name: 'Common Chest', emoji: '📦', type: 'inclusive',
+    entries: [
+      { id: 'se1', name: 'Iron Sword',   itemId: 'seed_i1', prob: 35 },
+      { id: 'se2', name: 'Health Potion',itemId: 'seed_i2', prob: 45 },
+      { id: 'se3', name: 'Wooden Arrow', itemId: 'seed_i9', prob: 20 },
+    ],
+    items: [],
+  },
+  {
+    id: 'seed_b2', name: 'Rare Chest', emoji: '🎁', type: 'inclusive',
+    entries: [
+      { id: 'se4', name: 'Shadow Dagger',itemId: 'seed_i5', prob: 40 },
+      { id: 'se5', name: 'Speed Boots',  itemId: 'seed_i7', prob: 35 },
+      { id: 'se6', name: 'Magic Staff',  itemId: 'seed_i3', prob: 20 },
+      { id: 'se7', name: 'Mana Crystal', itemId: 'seed_i8', prob: 5  },
+    ],
+    items: [],
+  },
+  {
+    id: 'seed_b3', name: 'Legendary Drop', emoji: '🔮', type: 'exclusive',
+    entries: [
+      { id: 'se8',  name: 'Golden Shield',   itemId: 'seed_i4', prob: 25 },
+      { id: 'se9',  name: 'Dragon Scale',    itemId: 'seed_i6', prob: 5  },
+      { id: 'se10', name: 'Phoenix Feather', itemId: 'seed_i10',prob: 10 },
+    ],
+    items: [],
+  },
+];
+
+function seedIfEmpty() {
+  if (!localStorage.getItem('lb_items') && !localStorage.getItem('lb_bundles')) {
+    localStorage.setItem('lb_items',   JSON.stringify(SEED_ITEMS));
+    localStorage.setItem('lb_bundles', JSON.stringify(SEED_BUNDLES));
+  }
+}
+seedIfEmpty();
+
+// ============================================================
 const state = {
   bundles: (JSON.parse(localStorage.getItem('lb_bundles') || '[]')).map(b => ({
     entries: [], items: [], ...b
